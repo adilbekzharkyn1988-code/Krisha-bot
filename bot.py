@@ -1,6 +1,10 @@
 import os
+import telegram
+print("PTB version:", telegram.__version__)
+
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+
 
 # Получаем токен из переменной окружения
 TOKEN = os.environ.get("BOT_TOKEN")
