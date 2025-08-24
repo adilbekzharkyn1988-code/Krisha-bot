@@ -1,87 +1,38 @@
+import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-import os
+TOKEN = os.environ.get("BOT_TOKEN")  # 🔑 токен лучше хранить в переменной окружения
+PORT = int(os.environ.get("PORT", 8443))
 
-# --- Функция для создания PDF ---
-def create_pdf(filename, description, images):
-    doc = SimpleDocTemplate(filename, pagesize=A4)
-
-    styles = getSampleStyleSheet()
-    normal_style = ParagraphStyle(
-        "Normal",
-        parent=styles["Normal"],
-        fontName="Times-Roman",  # встроенный Times
-        fontSize=12,
-        leading=14,
-    )
-
-    elements = []
-
-    # Описание
-    elements.append(Paragraph(description, normal_style))
-    elements.append(Spacer(1, 12))
-
-    # Фото в одну строку
-    img_list = []
-    for img_path in images:
-        img = Image(img_path, width=150, height=150)
-        img_list.append(img)
-
-    table = Table([img_list], hAlign="LEFT")
-    table.setStyle(
-        TableStyle([
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-            ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ])
-    )
-
-    elements.append(table)
-    doc.build(elements)
-
-
-# --- Telegram bot handlers ---
+# --- Хэндлеры ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Отправь мне текст и фото, и я соберу PDF.")
+    await update.message.reply_text("Привет! Я бот 🚀")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    description = update.message.text
-    photos = context.user_data.get("photos", [])
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Напиши что-нибудь, и я повторю.")
 
-    if description and photos:
-        filename = "output.pdf"
-        create_pdf(filename, description, photos)
-        await update.message.reply_document(document=open(filename, "rb"))
-        context.user_data["photos"] = []  # очищаем фото после сборки
-    else:
-        await update.message.reply_text("Сначала отправь фото, потом текст.")
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(update.message.text)
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    photo_file = await update.message.photo[-1].get_file()
-    file_path = f"{photo_file.file_id}.jpg"
-    await photo_file.download_to_drive(file_path)
-
-    photos = context.user_data.get("photos", [])
-    photos.append(file_path)
-    context.user_data["photos"] = photos
-
-    await update.message.reply_text("Фото сохранено. Теперь отправь описание.")
-
-# --- Main ---
+# --- Основная функция ---
 def main():
-    TOKEN = os.getenv("BOT_TOKEN")
     app = Application.builder().token(TOKEN).build()
 
+    # Команды
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("help", help_command))
 
-    app.run_polling()
+    # Сообщения
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
+    # --- Запуск через Webhook ---
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TOKEN,
+        webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+    )
 
 if __name__ == "__main__":
     main()
