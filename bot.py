@@ -46,6 +46,7 @@ async def create_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pdf = FPDF()
         pdf.add_page()
         pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)  # подключаем шрифт
+        pdf.add_font('DejaVu', 'B', 'DejaVuSans-Bold.ttf', uni=True)
         pdf.set_font('DejaVu', 'B', 16)
         pdf.multi_cell(0, 10, title, align="C")
         pdf.ln(5)
