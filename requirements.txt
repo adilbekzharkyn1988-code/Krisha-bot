@@ -1,4 +1,4 @@
-python-telegram-bot==20.7
-requests
-beautifulsoup4
-reportlab
+python-telegram-bot==20.6
+requests==2.32.0
+beautifulsoup4==4.12.2
+fpdf==1.7.2
