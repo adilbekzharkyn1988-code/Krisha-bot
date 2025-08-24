@@ -1,104 +1,87 @@
-import os
-import requests
-from bs4 import BeautifulSoup
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# Регистрируем шрифт с кириллицей
-pdfmetrics.registerFont(TTFont("TimesNewRoman", "times.ttf"))
+import os
 
-def parse_krisha(url):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(url, headers=headers, timeout=15)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    price = soup.select_one(".offer__price")
-    price = price.get_text(" ", strip=True) if price else "Цена не указана"
-
-    address = soup.select_one(".offer__location")
-    address = address.get_text(" ", strip=True) if address else "Адрес не указан"
-
-    params = [li.get_text(" ", strip=True) for li in soup.select(".offer__parameters li")]
-    params_text = "\n".join(params) if params else "Параметры не найдены"
-
-    desc = soup.select_one(".offer__description")
-    desc = desc.get_text(" ", strip=True) if desc else "Описание отсутствует"
-
-    photos = []
-    for img in soup.select(".gallery__image img"):
-        src = img.get("src") or img.get("data-src") or ""
-        if src.startswith("http"):
-            photos.append(src)
-
-    return price, address, params_text, desc, photos[:3]
-
-
-def make_pdf(price, address, params, desc, photos, filename="output.pdf"):
+# --- Функция для создания PDF ---
+def create_pdf(filename, description, images):
     doc = SimpleDocTemplate(filename, pagesize=A4)
+
     styles = getSampleStyleSheet()
-    style = styles["Normal"]
-    style.fontName = "TimesNewRoman"
+    normal_style = ParagraphStyle(
+        "Normal",
+        parent=styles["Normal"],
+        fontName="Times-Roman",  # встроенный Times
+        fontSize=12,
+        leading=14,
+    )
 
     elements = []
-    elements.append(Paragraph(f"<b>{price}</b>", style))
-    elements.append(Paragraph(f"📍 {address}", style))
+
+    # Описание
+    elements.append(Paragraph(description, normal_style))
     elements.append(Spacer(1, 12))
-    elements.append(Paragraph(params, style))
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph(desc, style))
-    elements.append(Spacer(1, 20))
 
-    row = []
-    for url in photos:
-        try:
-            img_data = requests.get(url, timeout=10).content
-            img_path = f"/tmp/{os.path.basename(url)}.jpg"
-            with open(img_path, "wb") as f:
-                f.write(img_data)
-            row.append(Image(img_path, width=150, height=100))
-        except:
-            pass
+    # Фото в одну строку
+    img_list = []
+    for img_path in images:
+        img = Image(img_path, width=150, height=150)
+        img_list.append(img)
 
-    if row:
-        table = Table([row], spaceBefore=10, spaceAfter=10)
-        elements.append(table)
+    table = Table([img_list], hAlign="LEFT")
+    table.setStyle(
+        TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ])
+    )
 
+    elements.append(table)
     doc.build(elements)
 
 
+# --- Telegram bot handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет 👋 Пришли ссылку с krisha.kz, я сделаю PDF с описанием и фото 🏠")
+    await update.message.reply_text("Привет! Отправь мне текст и фото, и я соберу PDF.")
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    description = update.message.text
+    photos = context.user_data.get("photos", [])
 
-async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
-    if not url.startswith("http"):
-        await update.message.reply_text("Отправь корректную ссылку 🔗")
-        return
+    if description and photos:
+        filename = "output.pdf"
+        create_pdf(filename, description, photos)
+        await update.message.reply_document(document=open(filename, "rb"))
+        context.user_data["photos"] = []  # очищаем фото после сборки
+    else:
+        await update.message.reply_text("Сначала отправь фото, потом текст.")
 
-    try:
-        price, address, params, desc, photos = parse_krisha(url)
-        make_pdf(price, address, params, desc, photos, "output.pdf")
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    photo_file = await update.message.photo[-1].get_file()
+    file_path = f"{photo_file.file_id}.jpg"
+    await photo_file.download_to_drive(file_path)
 
-        await update.message.reply_document(document=open("output.pdf", "rb"))
+    photos = context.user_data.get("photos", [])
+    photos.append(file_path)
+    context.user_data["photos"] = photos
 
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка: {e}")
+    await update.message.reply_text("Фото сохранено. Теперь отправь описание.")
 
-
+# --- Main ---
 def main():
-    token = os.environ["BOT_TOKEN"]
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-    app.run_polling()
+    TOKEN = os.getenv("BOT_TOKEN")
+    app = Application.builder().token(TOKEN).build()
 
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
