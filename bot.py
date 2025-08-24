@@ -9,6 +9,11 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TOKEN = os.environ.get("BOT_TOKEN")
 
+# Функция для временного шрифта DejaVuSans
+def get_dejavu_font_path():
+    # Укажи путь к локальному TTF шрифту DejaVuSans.ttf
+    return "DejaVuSans.ttf"  # положи TTF рядом с bot.py
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я бот 🚀\nИспользуй команду:\n/pdf <ссылка на объявление>\nчтобы получить PDF с кириллицей."
@@ -23,39 +28,39 @@ async def create_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Создаю PDF для {ad_url}... ⏳")
 
     try:
+        # Парсим объявление
         response = requests.get(ad_url, headers={"User-Agent": "Mozilla/5.0"})
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Название
         title_tag = soup.select_one("h1")
         title = title_tag.get_text(strip=True) if title_tag else "Название отсутствует"
 
-        # Цена
         price_tag = soup.select_one("div.offer__price")
         price = price_tag.get_text(strip=True) if price_tag else "Цена не указана"
 
-        # Описание
         desc_tag = soup.select_one("div.offer__description")
         description = desc_tag.get_text(strip=True) if desc_tag else "Описание отсутствует"
 
-        # Фото
         img_tag = soup.select_one("img.gallery__image")
         img_url = img_tag.get("src") if img_tag else None
 
         # Создаём PDF
         pdf = FPDF()
         pdf.add_page()
-        pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)  # подключаем шрифт
-        pdf.add_font('DejaVu', '', 'DejaVuSans-Bold.ttf', uni=True)
-        pdf.set_font('DejaVu', '', 12)   # обычный текст
+        font_path = get_dejavu_font_path()
+        pdf.add_font('DejaVu', '', font_path, uni=True)
+
+        # Заголовок
         pdf.set_font('DejaVu', '', 16)
-        pdf.multi_cell(0, 10, title, align="C")
+        pdf.multi_cell(0, 10, title, align='C')
         pdf.ln(5)
 
+        # Цена и описание
         pdf.set_font('DejaVu', '', 12)
         pdf.multi_cell(0, 8, f"{price}\n\n{description}\n\nСсылка: {ad_url}")
         pdf.ln(5)
 
+        # Фото
         if img_url:
             try:
                 img_response = requests.get(img_url)
@@ -85,3 +90,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
