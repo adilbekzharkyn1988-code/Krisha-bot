@@ -5,88 +5,116 @@ from fpdf import FPDF
 from PIL import Image
 from io import BytesIO
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = os.environ.get("BOT_TOKEN")
+TOKEN = os.environ.get("BOT_TOKEN")  # токен бота из Render
 
-# Функция для временного шрифта DejaVuSans
-def get_dejavu_font_path():
-    # Укажи путь к локальному TTF шрифту DejaVuSans.ttf
-    return "DejaVuSans.ttf"  # положи TTF рядом с bot.py
+# === Создание PDF ===
+def create_pdf(data, filename="output.pdf"):
+    pdf = FPDF()
+    pdf.add_page()
 
+    # Шрифты (utf-8, кириллица)
+    pdf.add_font("DejaVu", "", fname="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True)
+    pdf.set_font("DejaVu", "", 14)
+
+    # Заголовок
+    pdf.multi_cell(0, 10, data["title"], align="L")
+    pdf.ln(5)
+
+    # Цена
+    pdf.set_font("DejaVu", "", 12)
+    pdf.multi_cell(0, 10, f"Цена: {data['price']}")
+    pdf.ln(5)
+
+    # Описание (абзацы)
+    for para in data["description"]:
+        pdf.multi_cell(0, 8, para)
+        pdf.ln(3)
+
+    # Фотографии (макс 5 шт)
+    for img_url in data["images"][:5]:
+        try:
+            img_response = requests.get(img_url, timeout=10)
+            image = Image.open(BytesIO(img_response.content))
+            img_path = "temp.jpg"
+            image.save(img_path)
+            pdf.image(img_path, w=150)
+            os.remove(img_path)
+            pdf.ln(5)
+        except Exception as e:
+            print("Ошибка загрузки фото:", e)
+
+    # Ссылка
+    pdf.set_font("DejaVu", "", 10)
+    pdf.ln(5)
+    pdf.multi_cell(0, 8, f"Ссылка: {data['url']}")
+
+    pdf.output(filename)
+
+
+# === Парсинг Krisha ===
+def parse_krisha(url):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    r = requests.get(url, headers=headers)
+    r.encoding = "utf-8"
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    title = soup.select_one("h1").get_text(strip=True) if soup.select_one("h1") else "Без заголовка"
+    price = soup.select_one("div.offer__price").get_text(strip=True) if soup.select_one("div.offer__price") else "Без цены"
+
+    # Описание (берём <p>)
+    desc_paragraphs = []
+    desc_container = soup.select_one("div.offer__description")
+    if desc_container:
+        for p in desc_container.find_all("p"):
+            text = p.get_text(strip=True)
+            if text:
+                desc_paragraphs.append(text)
+    if not desc_paragraphs and desc_container:
+        desc_paragraphs = desc_container.get_text(strip=True).split("\n")
+
+    # Фото
+    images = []
+    for img in soup.select("img.gallery__image"):
+        src = img.get("src")
+        if src:
+            images.append(src)
+
+    return {
+        "title": title,
+        "price": price,
+        "description": desc_paragraphs,
+        "images": images,
+        "url": url
+    }
+
+
+# === Telegram handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привет! Я бот 🚀\nИспользуй команду:\n/pdf <ссылка на объявление>\nчтобы получить PDF с кириллицей."
-    )
+    await update.message.reply_text("Привет 👋 Пришли мне ссылку на объявление Krisha.kz, и я сделаю PDF.")
 
-async def create_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Укажи ссылку на объявление: /pdf <ссылка>")
+async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+    if "krisha.kz" not in url:
+        await update.message.reply_text("Отправь ссылку на объявление Krisha.kz")
         return
 
-    ad_url = context.args[0]
-    await update.message.reply_text(f"Создаю PDF для {ad_url}... ⏳")
-
     try:
-        # Парсим объявление
-        response = requests.get(ad_url, headers={"User-Agent": "Mozilla/5.0"})
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        title_tag = soup.select_one("h1")
-        title = title_tag.get_text(strip=True) if title_tag else "Название отсутствует"
-
-        price_tag = soup.select_one("div.offer__price")
-        price = price_tag.get_text(strip=True) if price_tag else "Цена не указана"
-
-        desc_tag = soup.select_one("div.offer__description")
-        description = desc_tag.get_text(strip=True) if desc_tag else "Описание отсутствует"
-
-        img_tag = soup.select_one("img.gallery__image")
-        img_url = img_tag.get("src") if img_tag else None
-
-        # Создаём PDF
-        pdf = FPDF()
-        pdf.add_page()
-        font_path = get_dejavu_font_path()
-        pdf.add_font('DejaVu', '', font_path, uni=True)
-
-        # Заголовок
-        pdf.set_font('DejaVu', '', 16)
-        pdf.multi_cell(0, 10, title, align='C')
-        pdf.ln(5)
-
-        # Цена и описание
-        pdf.set_font('DejaVu', '', 12)
-        pdf.multi_cell(0, 8, f"{price}\n\n{description}\n\nСсылка: {ad_url}")
-        pdf.ln(5)
-
-        # Фото
-        if img_url:
-            try:
-                img_response = requests.get(img_url)
-                image = Image.open(BytesIO(img_response.content))
-                img_path = "temp.jpg"
-                image.save(img_path)
-                pdf.image(img_path, w=150)
-                os.remove(img_path)
-                pdf.ln(5)
-            except:
-                pass
-
-        pdf_path = "krisha_ad.pdf"
-        pdf.output(pdf_path)
-
-        with open(pdf_path, "rb") as f:
-            await update.message.reply_document(f)
-
+        await update.message.reply_text("Парсю объявление, подожди 5–10 секунд...")
+        data = parse_krisha(url)
+        create_pdf(data, "result.pdf")
+        await update.message.reply_document(document=open("result.pdf", "rb"))
     except Exception as e:
         await update.message.reply_text(f"Ошибка при парсинге: {e}")
 
+
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("pdf", create_pdf))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
