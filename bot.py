@@ -9,14 +9,13 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 TOKEN = os.environ.get("BOT_TOKEN")  # токен бота из Render
 
-
 # === Создание PDF ===
 def create_pdf(data, filename="output.pdf"):
     pdf = FPDF()
     pdf.add_page()
 
-    # Шрифты (utf-8, кириллица)
-    pdf.add_font("DejaVu", "", fname="DejaVuSans.ttf", uni=True)
+    # Подключаем шрифт из корня проекта
+    pdf.add_font("DejaVu", "", "DejaVuSans.ttf", uni=True)
     pdf.set_font("DejaVu", "", 14)
 
     # Заголовок
@@ -33,7 +32,7 @@ def create_pdf(data, filename="output.pdf"):
         pdf.multi_cell(0, 8, para)
         pdf.ln(3)
 
-    # Фотографии (макс 5 шт)
+    # Фото (макс 5)
     for img_url in data["images"][:5]:
         try:
             img_response = requests.get(img_url, timeout=10)
@@ -64,7 +63,6 @@ def parse_krisha(url):
     title = soup.select_one("h1").get_text(strip=True) if soup.select_one("h1") else "Без заголовка"
     price = soup.select_one("div.offer__price").get_text(strip=True) if soup.select_one("div.offer__price") else "Без цены"
 
-    # Описание
     desc_paragraphs = []
     desc_container = soup.select_one("div.offer__description")
     if desc_container:
@@ -75,7 +73,6 @@ def parse_krisha(url):
     if not desc_paragraphs and desc_container:
         desc_paragraphs = desc_container.get_text(strip=True).split("\n")
 
-    # Фото
     images = []
     for img in soup.select("img.gallery__image"):
         src = img.get("src")
@@ -91,10 +88,9 @@ def parse_krisha(url):
     }
 
 
-# === Telegram handlers ===
+# === Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет 👋 Пришли мне ссылку на объявление Krisha.kz, и я сделаю PDF.")
-
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
@@ -111,19 +107,18 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Ошибка при парсинге: {e}")
 
 
-# === MAIN ===
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
 
-    # --- ВАЖНО: Render требует webhook ---
-    PORT = int(os.environ.get("PORT", 8443))
+    # Запуск через webhook для Render
+    port = int(os.environ.get("PORT", 8443))
     app.run_webhook(
         listen="0.0.0.0",
-        port=PORT,
+        port=port,
         url_path=TOKEN,
-        webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+        webhook_url=f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}/{TOKEN}"
     )
 
 
