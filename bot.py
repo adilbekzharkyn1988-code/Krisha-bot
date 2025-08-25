@@ -15,7 +15,7 @@ def create_pdf(data, filename="output.pdf"):
     pdf.add_page()
 
     # Шрифты (utf-8, кириллица)
-    pdf.add_font("DejaVu", "", fname="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True)
+    pdf.add_font("DejaVu", "", fname="DejaVuSans.ttf", uni=True)
     pdf.set_font("DejaVu", "", 14)
 
     # Заголовок
