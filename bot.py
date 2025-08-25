@@ -14,8 +14,9 @@ def create_pdf(data, filename="output.pdf"):
     pdf = FPDF()
     pdf.add_page()
 
-    # Шрифты (utf-8, кириллица)
-    pdf.add_font("DejaVu", "", fname="DejaVuSans.ttf", uni=True)
+    # Шрифты (utf-8, кириллица) — путь берём из корня проекта
+    FONT_PATH = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
+    pdf.add_font("DejaVu", "", FONT_PATH, uni=True)
     pdf.set_font("DejaVu", "", 14)
 
     # Заголовок
