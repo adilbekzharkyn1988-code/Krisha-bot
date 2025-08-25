@@ -9,14 +9,14 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 TOKEN = os.environ.get("BOT_TOKEN")  # токен бота из Render
 
+
 # === Создание PDF ===
 def create_pdf(data, filename="output.pdf"):
     pdf = FPDF()
     pdf.add_page()
 
-    # Шрифты (utf-8, кириллица) — путь берём из корня проекта
-    FONT_PATH = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
-    pdf.add_font("DejaVu", "", FONT_PATH, uni=True)
+    # Шрифты (utf-8, кириллица)
+    pdf.add_font("DejaVu", "", fname="DejaVuSans.ttf", uni=True)
     pdf.set_font("DejaVu", "", 14)
 
     # Заголовок
@@ -28,7 +28,7 @@ def create_pdf(data, filename="output.pdf"):
     pdf.multi_cell(0, 10, f"Цена: {data['price']}")
     pdf.ln(5)
 
-    # Описание (абзацы)
+    # Описание
     for para in data["description"]:
         pdf.multi_cell(0, 8, para)
         pdf.ln(3)
@@ -64,7 +64,7 @@ def parse_krisha(url):
     title = soup.select_one("h1").get_text(strip=True) if soup.select_one("h1") else "Без заголовка"
     price = soup.select_one("div.offer__price").get_text(strip=True) if soup.select_one("div.offer__price") else "Без цены"
 
-    # Описание (берём <p>)
+    # Описание
     desc_paragraphs = []
     desc_container = soup.select_one("div.offer__description")
     if desc_container:
@@ -95,6 +95,7 @@ def parse_krisha(url):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет 👋 Пришли мне ссылку на объявление Krisha.kz, и я сделаю PDF.")
 
+
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     if "krisha.kz" not in url:
@@ -110,11 +111,20 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Ошибка при парсинге: {e}")
 
 
+# === MAIN ===
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-    app.run_polling()
+
+    # --- ВАЖНО: Render требует webhook ---
+    PORT = int(os.environ.get("PORT", 8443))
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TOKEN,
+        webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+    )
 
 
 if __name__ == "__main__":
